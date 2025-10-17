@@ -1,0 +1,38 @@
+🚀 Initializing recipe backend...
+📊 Loading full dataset...
+📊 Filtered from 522517 to 522517 recipes
+✅ Using 15000 recipes for ML processing
+🔄 Preparing ingredient text for ML...
+✅ Processed 15000 recipes with valid ingredients
+🤖 Creating TF-IDF vectors...
+✅ Created TF-IDF matrix with shape (15000, 3000)
+✅ Found 231 categories
+🧪 Testing ML functionality...
+🔍 Searching for: chicken rice
+✅ Found 3 matching recipes
+✅ ML test successful - found 3 results
+✅ Recipe backend initialized successfully
+ * Serving Flask app 'main'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5002
+ * Running on http://169.254.0.21:5002
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 372-729-036
+🚀 Initializing recipe backend...
+📊 Loading full dataset...
+📊 Filtered from 522517 to 522517 recipes
+✅ Using 15000 recipes for ML processing
+🔄 Preparing ingredient text for ML...
+✅ Processed 15000 recipes with valid ingredients
+🤖 Creating TF-IDF vectors...
+✅ Created TF-IDF matrix with shape (15000, 3000)
+✅ Found 231 categories
+🧪 Testing ML functionality...
+🔍 Searching for: chicken rice
+✅ Found 3 matching recipes
+✅ ML test successful - found 3 results
+✅ Recipe backend initialized successfully
