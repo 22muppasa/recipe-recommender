@@ -10,7 +10,7 @@ import io
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("simple_recipe_engine")
 
 class SimpleRecipeEngine:
     def __init__(self, data_file_path):
@@ -20,7 +20,7 @@ class SimpleRecipeEngine:
         self.ingredient_index = defaultdict(set)  # ingredient -> set of recipe indices
 
     # -----------------------------
-    # Parsing helpers (NEW/UPDATED)
+    # Core detectors / cleaners
     # -----------------------------
     @staticmethod
     def _looks_like_r_vector(s: str) -> bool:
@@ -28,77 +28,52 @@ class SimpleRecipeEngine:
 
     @staticmethod
     def _is_noise_token(text: str) -> bool:
-        """
-        True if token is empty after stripping or consists only of quotes/brackets/punctuation.
-        Prevents stray steps like `"`, `)`, `,`, etc.
-        """
         if text is None:
             return True
         t = str(text).strip()
         if not t:
             return True
-        # Remove leading/trailing punctuation and test if anything meaningful remains
         core = re.sub(r'^[\s"\'`,.;:(){}\[\]-]+|[\s"\'`,.;:(){}\[\]-]+$', '', t)
         core = re.sub(r'[\s"\'`,.;:(){}\[\]-]+', '', core)
         return len(core) == 0
 
     @staticmethod
     def _strip_dangling_wrappers(text: str) -> str:
-        """
-        Trim surrounding quotes/parens if they’re unbalanced or dangling.
-        e.g., '"Step 9' -> 'Step 9', 'Step 10)' -> 'Step 10'
-        Balanced parentheses like 'serve warm (optional)' are preserved.
-        """
         if text is None:
             return ""
         t = str(text).strip()
-
-        # Remove a single leading or trailing quote if it’s not paired
         if t.count('"') % 2 == 1:
             t = t.strip('"')
         if t.count("'") % 2 == 1:
             t = t.strip("'")
-
-        # Remove a trailing unmatched right paren
-        if t.endswith(')') and not t.startswith('('):
-            # Only strip if parens are unbalanced
-            if t.count(')') > t.count('('):
-                t = t[:-1].rstrip()
-
-        # Remove a leading unmatched left paren
-        if t.startswith('(') and not t.endswith(')'):
-            if t.count('(') > t.count(')'):
-                t = t[1:].lstrip()
-
+        # Only strip clearly unmatched parens
+        if t.endswith(')') and t.count(')') > t.count('('):
+            t = t[:-1].rstrip()
+        if t.startswith('(') and t.count('(') > t.count(')'):
+            t = t[1:].lstrip()
         return t.strip()
 
     @staticmethod
     def _clean_step_text(text: str) -> str:
-        """Remove stray index lines and leading numbering; normalize spaces."""
+        # (Used for instructions; unchanged behavior you liked)
         if text is None:
             return ""
         t = str(text)
-
-        # Drop lines that are only numbers like "2" / "3." / "4)"
         lines = re.split(r'[\r\n]+', t)
         lines = [ln for ln in lines if not re.fullmatch(r'\s*\d+[.)]?\s*', ln or "")]
         t = " ".join(lines)
-
-        # Remove leading numbering like "6. ", "6) ", "- ", "• "
         t = re.sub(r'^\s*(?:\d+[.)]?|[-•])\s+', '', t)
-
-        # Normalize spaces
         t = re.sub(r'\s+', ' ', t).strip()
-
-        # Strip any dangling quotes/parens
         t = SimpleRecipeEngine._strip_dangling_wrappers(t)
-
         return t
 
+    # -----------------------------
+    # Instructions parser (UNCHANGED)
+    # -----------------------------
     def parse_r_list(self, r_string):
         """
-        Parse R c(\"...\") lists or split plain text; remove index artifacts and punctuation-only tokens.
-        Fixes issues like stray `"` or `)` becoming their own steps.
+        Parse R c(\"...\") lists or split plain text for INSTRUCTIONS.
+        This is the exact behavior you approved—do not change.
         """
         if not r_string or str(r_string).strip().lower() == 'nan':
             return []
@@ -113,47 +88,110 @@ class SimpleRecipeEngine:
                     out.append(tok)
             return out
 
-        # Path 1: R-style vector like c("...", "...")
         if self._looks_like_r_vector(s):
-            # Extract content between FIRST '(' and LAST ')'
             try:
                 first_paren = s.index('(')
                 last_paren = s.rindex(')')
                 content = s[first_paren + 1:last_paren].strip()
             except ValueError:
                 content = s
-
-            # CSV reader to respect quoted commas
             try:
                 rdr = csv.reader(io.StringIO(content), delimiter=',', quotechar='"', skipinitialspace=True)
                 row = next(rdr, [])
             except Exception:
                 row = []
-
-            # If the row collapsed due to newlines, try again with newlines replaced by spaces
             if len(row) <= 1 and ',' in content:
                 rdr = csv.reader(io.StringIO(content.replace('\n', ' ')), delimiter=',', quotechar='"', skipinitialspace=True)
                 row = next(rdr, [])
-
-            # Clean + drop noise/NA/empty
             items = []
             for tok in row:
                 t = (tok or "").strip()
                 if t.upper() == "NA":
                     continue
                 items.append(t)
-
             return finalize(items)
 
-        # Path 2: Plain text — split into sentences, then clean + drop noise
         parts = re.findall(r'[^.?!;\n]+(?:[.?!;]|$)', s)
         return finalize(parts)
 
     # -----------------------------
-    # Existing utilities
+    # NEW: Robust R-vector extractor for INGREDIENTS/QUANTITIES
+    # -----------------------------
+    @staticmethod
+    def _parse_r_vector_keep_placeholders(s: str):
+        """
+        Extract ALL quoted elements from c("a","b",...),
+        preserving position (NA -> ""), tolerating newlines/commas.
+        """
+        if not s:
+            return []
+        txt = str(s).strip()
+        if not SimpleRecipeEngine._looks_like_r_vector(txt):
+            # Not an R vector; return a conservative single-token list
+            return [txt] if txt else []
+
+        # Grab content inside the outermost parens
+        try:
+            first_paren = txt.index('(')
+            last_paren = txt.rindex(')')
+            content = txt[first_paren + 1:last_paren]
+        except ValueError:
+            content = txt
+
+        # Find every "..." segment even across newlines
+        # This ignores commas entirely and relies on the quotes, which is what we want
+        matches = re.findall(r'"([^"]*)"', content, flags=re.DOTALL)
+
+        # Convert NA-like tokens to empty placeholders BUT KEEP THEIR SLOT
+        out = []
+        for m in matches:
+            t = (m or "").strip()
+            if t.upper() == "NA":
+                t = ""  # placeholder to keep alignment
+            out.append(t)
+        return out
+
+    # -----------------------------
+    # Ingredient pairing (PADDING, not truncating)
+    # -----------------------------
+    def _pair_quantities_ingredients(self, quantities, ingredients, row_idx=None, recipe_name=None):
+        """
+        Align to the LONGER list and pad the shorter with "" so every ingredient gets a quantity slot and vice versa.
+        """
+        q = list(quantities or [])
+        ing = list(ingredients or [])
+
+        # Report, but don't drop info
+        if len(q) != len(ing):
+            id_info = f"(row {row_idx})" if row_idx is not None else ""
+            name_info = f' name="{recipe_name}"' if recipe_name else ""
+            logger.info(
+                f"ℹ️ Aligning quantities and ingredients by padding {id_info}{name_info}: "
+                f"quantities={len(q)}, ingredients={len(ing)} -> aligned={max(len(q), len(ing))}"
+            )
+
+        n = max(len(q), len(ing))
+        if len(q) < n:
+            q.extend([""] * (n - len(q)))
+        if len(ing) < n:
+            ing.extend([""] * (n - len(ing)))
+
+        paired = []
+        for i in range(n):
+            qty = q[i].strip() if isinstance(q[i], str) else str(q[i] or "").strip()
+            item = ing[i].strip() if isinstance(ing[i], str) else str(ing[i] or "").strip()
+
+            # Build display string: "qty item" (omit leading space if qty is empty)
+            combined = f"{qty} {item}".strip() if qty else item
+            if combined:  # skip if both empty (shouldn't happen)
+                paired.append(combined)
+
+        return paired
+
+    # -----------------------------
+    # Text utilities
     # -----------------------------
     def clean_text(self, text):
-        """Clean and normalize text"""
         if not text:
             return ""
         text = str(text).strip()
@@ -161,7 +199,6 @@ class SimpleRecipeEngine:
         return text
 
     def extract_ingredient_words(self, ingredient):
-        """Extract meaningful words from ingredient text"""
         if not ingredient:
             return []
         ingredient = re.sub(r'[^\w\s]', ' ', ingredient.lower())
@@ -172,13 +209,14 @@ class SimpleRecipeEngine:
             'ml', 'kg', 'lb', 'oz', 'tsp', 'tbsp'
         }
         words = [
-            word.strip() for word in ingredient.split()
-            if word.strip() and len(word.strip()) > 2 and word.strip() not in stop_words
+            w for w in (ingredient.split()) if w and len(w) > 2 and w not in stop_words
         ]
         return words
 
+    # -----------------------------
+    # Load / search
+    # -----------------------------
     def load_recipes(self):
-        """Load recipes from CSV file"""
         try:
             logger.info(f"📂 Loading recipes from: {self.data_file_path}")
 
@@ -201,12 +239,10 @@ class SimpleRecipeEngine:
 
                             # Index ingredients for search
                             for ingredient in recipe.get("ingredients", []):
-                                words = self.extract_ingredient_words(ingredient)
-                                for word in words:
+                                for word in self.extract_ingredient_words(ingredient):
                                     self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
                             recipes_loaded += 1
 
-                        # Limit for deployment
                         if recipes_loaded >= 10000:
                             break
 
@@ -226,22 +262,25 @@ class SimpleRecipeEngine:
             logger.error(f"❌ Error loading recipes: {e}")
             return False
 
+    # -----------------------------
+    # Safe parsers
+    # -----------------------------
     def safe_int(self, value, default=0):
-        """Safely convert value to int"""
         try:
             return int(float(value))
         except (ValueError, TypeError):
             return default
 
     def safe_float(self, value, default=0.0):
-        """Safely convert value to float"""
         try:
             return float(value)
         except (ValueError, TypeError):
             return default
 
+    # -----------------------------
+    # Convenience
+    # -----------------------------
     def get_difficulty(self, cook_time):
-        """Determine difficulty based on cook time"""
         if cook_time <= 15:
             return "Easy"
         elif cook_time <= 45:
@@ -250,51 +289,36 @@ class SimpleRecipeEngine:
             return "Hard"
 
     def search_recipes(self, search_ingredients, top_n=6):
-        """Search recipes using simple ingredient matching"""
         if not search_ingredients:
             return []
-
         try:
             logger.info(f"🔍 Searching for: {search_ingredients}")
-
-            # Find recipes that match ingredients
             recipe_scores = defaultdict(float)
-
             for ingredient in search_ingredients:
-                ingredient_words = self.extract_ingredient_words(ingredient)
-                for word in ingredient_words:
-                    word_lower = word.lower()
-                    if word_lower in self.ingredient_index:
-                        for recipe_idx in self.ingredient_index[word_lower]:
-                            # Weight each word equally within the ingredient string
-                            recipe_scores[recipe_idx] += 1.0 / max(len(ingredient_words), 1)
-
-            # Sort by score
+                for word in self.extract_ingredient_words(ingredient):
+                    if word in self.ingredient_index:
+                        for recipe_idx in self.ingredient_index[word]:
+                            recipe_scores[recipe_idx] += 1.0 / max(len(self.extract_ingredient_words(ingredient)), 1)
             sorted_recipes = sorted(recipe_scores.items(), key=lambda x: x[1], reverse=True)
-
             results = []
             for recipe_idx, score in sorted_recipes[:top_n]:
                 if score > 0:
                     recipe = self.recipes[recipe_idx].copy()
-                    recipe['similarityScore'] = min(score, 1.0)  # Cap at 1.0
+                    recipe['similarityScore'] = min(score, 1.0)
                     results.append(recipe)
-
             logger.info(f"✅ Found {len(results)} matching recipes")
             return results
-
         except Exception as e:
             logger.error(f"❌ Error in search: {e}")
             return []
 
     def get_random_recipes(self, count=6):
-        """Get random recipes"""
         if not self.recipes:
             return []
         count = min(count, len(self.recipes), 50)
         return random.sample(self.recipes, count)
 
     def get_recipes_by_category(self, category, limit=20):
-        """Get recipes by category"""
         try:
             filtered = [r for r in self.recipes if category.lower() in r['category'].lower()]
             if len(filtered) > limit:
@@ -305,7 +329,6 @@ class SimpleRecipeEngine:
             return []
 
     def get_recipe_by_id(self, recipe_id):
-        """Get recipe by ID"""
         try:
             for recipe in self.recipes:
                 if recipe['id'] == str(recipe_id):
@@ -315,39 +338,49 @@ class SimpleRecipeEngine:
             logger.error(f"Error getting recipe by ID: {e}")
             return None
 
+    # -----------------------------
+    # Row processing
+    # -----------------------------
     def process_recipe_row(self, row, index):
-        """Process a single recipe row"""
+        """
+        Process a single recipe row.
+        - INSTRUCTIONS parsing remains as-is (your approved logic).
+        - INGREDIENTS/QUANTITIES now use a strict R-vector extractor + padding alignment.
+        """
         try:
-            # Parse ingredients
-            ingredients_parts = self.parse_r_list(row.get("RecipeIngredientParts", ""))
-            ingredients_quantities = self.parse_r_list(row.get("RecipeIngredientQuantities", ""))
-            instructions = self.parse_r_list(row.get("RecipeInstructions", ""))
+            # Raw fields
+            ing_parts_raw = row.get("RecipeIngredientParts", "")
+            ing_quants_raw = row.get("RecipeIngredientQuantities", "")
+            instructions_raw = row.get("RecipeInstructions", "")
 
-            if not ingredients_parts or not instructions:
+            # Parse with robust vector extractor for ingredients/quantities
+            ing_parts = self._parse_r_vector_keep_placeholders(ing_parts_raw)
+            ing_quants = self._parse_r_vector_keep_placeholders(ing_quants_raw)
+
+            # Keep your exact instruction parsing
+            instructions = self.parse_r_list(instructions_raw)
+
+            if not ing_parts or not instructions:
+                return None  # need ingredients and instructions at minimum
+
+            # Align (pad shorter side) so every ingredient has a quantity slot
+            ingredients = self._pair_quantities_ingredients(
+                ing_quants, ing_parts, row_idx=index, recipe_name=row.get("Name")
+            )
+
+            if not ingredients:
                 return None
 
-            # Combine ingredients with quantities
-            ingredients = []
-            for i, part in enumerate(ingredients_parts):
-                if i < len(ingredients_quantities) and ingredients_quantities[i]:
-                    quantity = str(ingredients_quantities[i]).strip()
-                    ingredient = str(part).strip()
-                    if quantity and ingredient:
-                        ingredients.append(f"{quantity} {ingredient}")
-                    else:
-                        ingredients.append(ingredient)
-                else:
-                    ingredients.append(str(part).strip())
+            # Image
+            # --- FIX: proper image extraction from R-style vector ---
+            image_list = self._parse_r_vector_keep_placeholders(row.get("Images", ""))
+            image_url = image_list[0] if image_list else "https://via.placeholder.com/400x300/f0f0f0/666?text=Recipe"
 
-            # Get image
-            image_url = (row.get("Images") or "").strip() or "https://via.placeholder.com/400x300/f0f0f0/666?text=Recipe"
 
-            # Extract cook time
+            # Times / difficulty
             total_time = self.safe_int(row.get("TotalTime"), 30)
             cook_time = self.safe_int(row.get("CookTime"), 30)
             final_cook_time = cook_time if cook_time != 30 else total_time
-
-            # Determine difficulty
             difficulty = self.get_difficulty(final_cook_time)
 
             recipe = {
@@ -360,8 +393,8 @@ class SimpleRecipeEngine:
                 "rating": self.safe_float(row.get("AggregatedRating")) or round(4.2 + (index % 7) * 0.1, 1),
                 "category": self.clean_text(row.get("RecipeCategory", "General")),
                 "difficulty": difficulty,
-                "ingredients": ingredients,
-                "instructions": instructions,
+                "ingredients": ingredients,       # aligned with padding
+                "instructions": instructions,     # unchanged parser
                 "nutrition": {
                     "calories": self.safe_int(row.get("Calories", 0)),
                     "protein": self.safe_float(row.get("ProteinContent", 0)),
@@ -369,8 +402,8 @@ class SimpleRecipeEngine:
                     "carbs": self.safe_float(row.get("CarbohydrateContent", 0))
                 }
             }
-
             return recipe
+
         except Exception as e:
             logger.error(f"Error processing recipe row {index}: {e}")
             return None
