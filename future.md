@@ -1,0 +1,4 @@
+- make only items with images appear.
+- add macro filtering and displaying macro
+- find a way to process more recipes
+- fix ingredient parsing.
