@@ -1,0 +1,5 @@
+- I have connected the backend to the frontend on a small subset of data(5000).
+
+- I still need to figure out how to stream the larger dataset.
+
+- I have uploaded renditions of the algorithm model. All are different and are tuned differently. recipes_lightweight.py has the most accurate model.
