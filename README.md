@@ -2,7 +2,9 @@
 
 A full-stack web application that provides intelligent recipe recommendations based on available ingredients using machine learning algorithms and real recipe data from Hugging Face.
 
+## 🚀 Live Demo
 
+**Production URL**: https://60h5imcl0wkv.manus.space
 
 ## ✨ Features
 
@@ -16,6 +18,7 @@ A full-stack web application that provides intelligent recipe recommendations ba
 - **🗂️ Real Dataset**: Over 10,000 recipes from Hugging Face `untitledwebsite123/food-recipes`
 
 ## 🏗️ Architecture
+
 
 ### Frontend
 - **React 18** with TypeScript
@@ -238,82 +241,3 @@ Ensure the following for production:
 - Use a production WSGI server like Gunicorn
 - Configure proper CORS settings
 - Set up proper logging
-
-## 🛠️ Development
-
-### Adding New Features
-
-1. **Backend**: Add new routes in `backend/src/routes/`
-2. **Frontend**: Add new components in `frontend/src/components/`
-3. **Styling**: Use Tailwind CSS classes
-4. **State Management**: Use React hooks
-
-### Code Style
-
-- **Python**: Follow PEP 8
-- **TypeScript**: Use ESLint and Prettier
-- **CSS**: Use Tailwind CSS utilities
-
-## 📈 Performance
-
-- **Search Speed**: <2 seconds for ingredient matching
-- **Dataset Size**: 10,000+ recipes optimized for deployment
-- **Memory Usage**: Efficient in-memory indexing
-- **Response Times**: Fast API responses with proper caching
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **Backend not starting**
-   - Check Python version (3.8+ required)
-   - Ensure virtual environment is activated
-   - Verify all dependencies are installed
-
-2. **Frontend build fails**
-   - Check Node.js version (18+ required)
-   - Clear node_modules and reinstall: `rm -rf node_modules && npm install`
-
-3. **Search not working**
-   - Check backend is running on correct port
-   - Verify CORS configuration
-   - Check browser console for errors
-
-4. **No recipes found**
-   - Ensure dataset file exists in `backend/src/data/`
-   - Check dataset format and parsing
-
-### Logs
-
-Backend logs are available in the console when running `python src/main.py`
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push to branch: `git push origin feature-name`
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **Hugging Face** for the recipe dataset
-- **Food.com** for the original recipe data
-- **React** and **Flask** communities for excellent documentation
-- **Tailwind CSS** for the utility-first CSS framework
-
-## 📞 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the troubleshooting section
-- Review the API documentation
-
----
-
-**Built with ❤️ using React, Flask, and Machine Learning**
-
