@@ -2,9 +2,7 @@
 
 A full-stack web application that provides intelligent recipe recommendations based on available ingredients using machine learning algorithms and real recipe data from Hugging Face.
 
-## 🚀 Live Demo
 
-**Production URL**: https://60h5imcl0wkv.manus.space
 
 ## ✨ Features
 

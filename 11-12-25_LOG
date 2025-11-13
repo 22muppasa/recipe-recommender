@@ -1,0 +1,6 @@
+11/03/25 - Fixed parsing error in recipe_final.py. It now parses instructions with relatively perfect accuracy. 
+11/04/25 - Finished making final changes on recipe_final which includes the addition of ingredient cleaning and fixed the display to look cleaner.
+11/05/25 - Watched videos and read documentation of HuggingFace to better understand how to get data directly from HuggingFace and detract from the small subset of data I have now.
+11/06/25 - Some tuneups in data processing so that it is able to pass large amounts of data without much error. Also, I made it so that if there is error, it will be handled.
+11/07/25 - Worked on decluttering recipes_improved. This will allow for better and faster loading of recipes. I basically removed any unecessary processing and functions in recipes_improved that might cause delay in output.
+11/08/25 - Continued with Researching for HuggingFace. Made a document of research findings. I also finished up decluttering the recipes_improved for now. I might still need to make changes later.

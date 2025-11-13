@@ -221,7 +221,7 @@ def process_dataset():
                 print(f"Processed {processed_count} recipes...")
             
             # Limit to first 5000 recipes for demo purposes
-            if processed_count >= 5000:
+            if processed_count >= 100000:
                 break
 
     print(f"✅ Done. Processed {processed_count} recipes.")

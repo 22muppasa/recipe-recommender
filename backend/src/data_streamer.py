@@ -19,7 +19,7 @@ class RecipeDataStreamer:
         self.tfidf_vectorizer = None
         self.tfidf_matrix = None
         self.categories = []
-        self.chunk_size = 10000  # Process in chunks
+        self.chunk_size = 1000000  # Process in chunks
         
     def parse_r_list(self, r_string):
         """Parse R-style list notation c(...) into Python list"""
