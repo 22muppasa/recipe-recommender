@@ -1,6 +1,12 @@
 11/03/25 - Fixed parsing error in recipe_final.py. It now parses instructions with relatively perfect accuracy. 
-11/04/25 - Finished making final changes on recipe_final which includes the addition of ingredient cleaning and fixed the display to look cleaner.
+11/04/25 - Finished making final changes on recipe_final, which includes the addition of ingredient cleaning and fixed the display to look cleaner.
 11/05/25 - Watched videos and read documentation of HuggingFace to better understand how to get data directly from HuggingFace and detract from the small subset of data I have now.
-11/06/25 - Some tuneups in data processing so that it is able to pass large amounts of data without much error. Also, I made it so that if there is error, it will be handled.
-11/07/25 - Worked on decluttering recipes_improved. This will allow for better and faster loading of recipes. I basically removed any unecessary processing and functions in recipes_improved that might cause delay in output.
+11/06/25 - Some tune-ups in data processing so that it can pass large amounts of data without much error. Also, I made it so that if there is error, it will be handled.
+11/07/25 - Worked on decluttering recipes_improved. This will allow for better and faster loading of recipes. I basically removed any unnecessary processing and functions in recipes_improved that might cause delay in output.
 11/08/25 - Continued with Researching for HuggingFace. Made a document of research findings. I also finished up decluttering the recipes_improved for now. I might still need to make changes later.
+11/10/25 - Started to put the solution to connect to the HuggingFace dataset into the code and got a secure connection.
+11/11/25 - Tweaked the processing so that it can process all the HuggingFace data without limits. (Previously had limits set in place). Also tweaked the code to accommodate the new connection to HuggingFace because it is no longer relying on data from a CSV file.
+11/12/25 - Worked on decluttering the new implementation so that things that I had before that are no longer needed because of the HuggingFace connection are removed.(This will help to make the web app faster because it won't need to go through unnecessary processes.)
+11/13/25 - I spent time finding ways to make the processing more efficient. It takes about 10 minutes for the web app  to start up because it has to process and adjust 50000 recipes. I found that I could try batch processing, but I am still looking into exactly how to do that.
+11/14/25 - I got an error when testing the web app, most of the recipes had the instructions inverted and so I spent time looking through my code for what caused it. It ended up being a deleted portion of a function from when I was implementing the connection from HuggingFace. The rest of the time I spent on finding more about how I could batch process and adjust the recipes to decrease startup time.
+
