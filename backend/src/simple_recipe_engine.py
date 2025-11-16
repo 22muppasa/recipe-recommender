@@ -7,17 +7,27 @@ from collections import defaultdict, Counter
 import math
 import random
 import io
+import csv
+from datasets import load_dataset
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simple_recipe_engine")
 
 class SimpleRecipeEngine:
-    def __init__(self, data_file_path):
-        self.data_file_path = data_file_path
+    def __init__(self, data_source):
+        # data_source can be a file path (for local CSV) or a dataset name (for HF)
+        self.data_source = data_source
         self.recipes = []
         self.categories = []
         self.ingredient_index = defaultdict(set)  # ingredient -> set of recipe indices
+        self.is_hf_dataset = isinstance(data_source, str) and '/' in data_source and not os.path.exists(data_source)
+        if self.is_hf_dataset:
+            logger.info(f"💡 Data source detected as Hugging Face dataset: {self.data_source}")
+        else:
+            logger.info(f"💡 Data source detected as local file: {self.data_source}")
+
+
 
     # -----------------------------
     # Core detectors / cleaners
@@ -218,37 +228,48 @@ class SimpleRecipeEngine:
     # -----------------------------
     def load_recipes(self):
         try:
-            logger.info(f"📂 Loading recipes from: {self.data_file_path}")
-
-            if not os.path.exists(self.data_file_path):
-                logger.error(f"❌ Dataset file not found: {self.data_file_path}")
-                return False
-
             recipes_loaded = 0
             categories_set = set()
-
-            with open(self.data_file_path, 'r', encoding='utf-8') as file:
+            
+            if self.is_hf_dataset:
+                logger.info(f"📂 Streaming recipes from Hugging Face dataset: {self.data_source}")
+                # Load the dataset in streaming mode
+                dataset = load_dataset(self.data_source, split='train', streaming=True)
+                data_iterator = enumerate(dataset)
+            else:
+                logger.info(f"📂 Loading recipes from local file: {self.data_source}")
+                if not os.path.exists(self.data_source):
+                    logger.error(f"❌ Dataset file not found: {self.data_source}")
+                    return False
+                
+                # For local CSV, use the existing file reading logic
+                file = open(self.data_source, 'r', encoding='utf-8')
                 reader = csv.DictReader(file)
+                data_iterator = enumerate(reader)
 
-                for idx, row in enumerate(reader):
-                    try:
-                        recipe = self.process_recipe_row(row, idx)
-                        if recipe:
-                            self.recipes.append(recipe)
-                            categories_set.add(recipe["category"])
+            for idx, row in data_iterator:
+                try:
+                    # The row structure is the same whether it comes from csv.DictReader or HF dataset
+                    recipe = self.process_recipe_row(row, idx)
+                    if recipe:
+                        self.recipes.append(recipe)
+                        categories_set.add(recipe["category"])
 
-                            # Index ingredients for search
-                            for ingredient in recipe.get("ingredients", []):
-                                for word in self.extract_ingredient_words(ingredient):
-                                    self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
-                            recipes_loaded += 1
+                        # Index ingredients for search
+                        for ingredient in recipe.get("ingredients", []):
+                            for word in self.extract_ingredient_words(ingredient):
+                                self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
+                        recipes_loaded += 1
 
-                        if recipes_loaded >= 10000:
-                            break
+                        # Remove the 10k limit check to load the entire dataset
+                        # if recipes_loaded >= 10000:
+                        #     break
 
-                    except Exception as e:
-                        logger.warning(f"Error processing recipe {idx}: {e}")
-                        continue
+                except Exception as e:
+                    logger.warning(f"Error processing recipe {idx}: {e}")
+            
+            if not self.is_hf_dataset:
+                file.close()
 
             self.categories = sorted(list(categories_set))
 

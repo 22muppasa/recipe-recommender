@@ -26,17 +26,13 @@ def initialize_recipe_engine():
         return True
     
     try:
-        # Use the deployment dataset
-        data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
-        data_file = os.path.join(data_dir, "recipes_deploy_10k.csv")
+        # Use the Hugging Face dataset
+        hf_dataset_name = "untitledwebsite123/food-recipes"
         
-        logger.info(f"🚀 Initializing simple recipe engine with file: {data_file}")
+        logger.info(f"🚀 Initializing simple recipe engine with Hugging Face dataset: {hf_dataset_name}")
         
-        if not os.path.exists(data_file):
-            logger.error(f"❌ Dataset file not found: {data_file}")
-            return False
-        
-        recipe_engine = SimpleRecipeEngine(data_file)
+        # The SimpleRecipeEngine is now designed to handle the HF dataset name directly
+        recipe_engine = SimpleRecipeEngine(hf_dataset_name)
         
         # Load the recipes
         if not recipe_engine.load_recipes():
@@ -223,4 +219,3 @@ def test_search():
     except Exception as e:
         logger.error(f"❌ Error in test search: {e}")
         return jsonify({'error': 'Test search failed'}), 500
-
