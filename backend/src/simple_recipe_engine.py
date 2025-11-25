@@ -7,27 +7,43 @@ from collections import defaultdict, Counter
 import math
 import random
 import io
-import csv
 from datasets import load_dataset
+import threading  # ✅ NEW
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("simple_recipe_engine")
 
 class SimpleRecipeEngine:
-    def __init__(self, data_source):
+    def __init__(self, data_source, initial_limit=1500, background_load=True):
+        """
+        initial_limit: how many recipes to load synchronously at startup.
+        background_load: if True, load the rest of the dataset in a background thread.
+        """
         # data_source can be a file path (for local CSV) or a dataset name (for HF)
         self.data_source = data_source
         self.recipes = []
         self.categories = []
         self.ingredient_index = defaultdict(set)  # ingredient -> set of recipe indices
-        self.is_hf_dataset = isinstance(data_source, str) and '/' in data_source and not os.path.exists(data_source)
+
+        # NEW: background loading controls
+        self.initial_limit = initial_limit
+        self.background_load = background_load
+        self._background_started = False
+        self.fully_loaded = False
+
+        # NEW: track IDs we've already added so we can safely re-scan the dataset
+        self._seen_ids = set()
+
+        self.is_hf_dataset = (
+            isinstance(data_source, str)
+            and '/' in data_source
+            and not os.path.exists(data_source)
+        )
         if self.is_hf_dataset:
             logger.info(f"💡 Data source detected as Hugging Face dataset: {self.data_source}")
         else:
             logger.info(f"💡 Data source detected as local file: {self.data_source}")
-
-
 
     # -----------------------------
     # Core detectors / cleaners
@@ -148,11 +164,8 @@ class SimpleRecipeEngine:
         except ValueError:
             content = txt
 
-        # Find every "..." segment even across newlines
-        # This ignores commas entirely and relies on the quotes, which is what we want
         matches = re.findall(r'"([^"]*)"', content, flags=re.DOTALL)
 
-        # Convert NA-like tokens to empty placeholders BUT KEEP THEIR SLOT
         out = []
         for m in matches:
             t = (m or "").strip()
@@ -171,7 +184,6 @@ class SimpleRecipeEngine:
         q = list(quantities or [])
         ing = list(ingredients or [])
 
-        # Report, but don't drop info
         if len(q) != len(ing):
             id_info = f"(row {row_idx})" if row_idx is not None else ""
             name_info = f' name="{recipe_name}"' if recipe_name else ""
@@ -190,10 +202,8 @@ class SimpleRecipeEngine:
         for i in range(n):
             qty = q[i].strip() if isinstance(q[i], str) else str(q[i] or "").strip()
             item = ing[i].strip() if isinstance(ing[i], str) else str(ing[i] or "").strip()
-
-            # Build display string: "qty item" (omit leading space if qty is empty)
             combined = f"{qty} {item}".strip() if qty else item
-            if combined:  # skip if both empty (shouldn't happen)
+            if combined:
                 paired.append(combined)
 
         return paired
@@ -224,60 +234,141 @@ class SimpleRecipeEngine:
         return words
 
     # -----------------------------
+    # SOURCE ITERATOR HELPER
+    # -----------------------------
+    def _iter_source_rows(self):
+        """
+        Unified iterator over rows from HF or local CSV.
+        Yields (idx, row_dict).
+        """
+        if self.is_hf_dataset:
+            logger.info(f"📂 Streaming recipes from Hugging Face dataset: {self.data_source}")
+            dataset = load_dataset(self.data_source, split='train', streaming=True)
+            for idx, row in enumerate(dataset):
+                yield idx, row
+        else:
+            logger.info(f"📂 Loading recipes from local file: {self.data_source}")
+            if not os.path.exists(self.data_source):
+                logger.error(f"❌ Dataset file not found: {self.data_source}")
+                return
+            with open(self.data_source, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for idx, row in enumerate(reader):
+                    yield idx, row
+
+    # -----------------------------
+    # BACKGROUND LOAD
+    # -----------------------------
+    def _background_load_remaining(self):
+        """
+        Re-scan the dataset in a background thread and add any recipes
+        whose IDs we haven't seen yet.
+        """
+        try:
+            logger.info("🚀 Background loading of remaining recipes started")
+            categories_set = set(self.categories)
+
+            for idx, row in self._iter_source_rows():
+                try:
+                    recipe = self.process_recipe_row(row, idx)
+                    if not recipe:
+                        continue
+
+                    rid = recipe["id"]
+                    if rid in self._seen_ids:
+                        # Already loaded in initial batch
+                        continue
+
+                    # Mark as seen and add
+                    self._seen_ids.add(rid)
+                    self.recipes.append(recipe)
+                    categories_set.add(recipe["category"])
+
+                    # Index ingredients for search
+                    for ingredient in recipe.get("ingredients", []):
+                        for word in self.extract_ingredient_words(ingredient):
+                            self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
+
+                except Exception as e:
+                    logger.warning(f"Error processing recipe (background) {idx}: {e}")
+
+            self.categories = sorted(list(categories_set))
+            self.fully_loaded = True
+            logger.info(f"✅ Background loading complete; total recipes = {len(self.recipes)}")
+            logger.info(f"📊 Final category count: {len(self.categories)}")
+            logger.info(f"🔍 Final ingredient index size: {len(self.ingredient_index)}")
+
+        except Exception as e:
+            logger.error(f"❌ Background loading failed: {e}")
+
+    # -----------------------------
     # Load / search
     # -----------------------------
     def load_recipes(self):
+        """
+        Load recipes. If background_load is True, only a subset (initial_limit)
+        is loaded synchronously, then the rest is loaded in the background.
+        """
         try:
-            recipes_loaded = 0
-            categories_set = set()
-            
-            if self.is_hf_dataset:
-                logger.info(f"📂 Streaming recipes from Hugging Face dataset: {self.data_source}")
-                # Load the dataset in streaming mode
-                dataset = load_dataset(self.data_source, split='train', streaming=True)
-                data_iterator = enumerate(dataset)
-            else:
-                logger.info(f"📂 Loading recipes from local file: {self.data_source}")
-                if not os.path.exists(self.data_source):
-                    logger.error(f"❌ Dataset file not found: {self.data_source}")
-                    return False
-                
-                # For local CSV, use the existing file reading logic
-                file = open(self.data_source, 'r', encoding='utf-8')
-                reader = csv.DictReader(file)
-                data_iterator = enumerate(reader)
+            recipes_loaded_now = 0
+            categories_set = set(self.categories)
 
-            for idx, row in data_iterator:
+            for idx, row in self._iter_source_rows():
                 try:
-                    # The row structure is the same whether it comes from csv.DictReader or HF dataset
                     recipe = self.process_recipe_row(row, idx)
-                    if recipe:
-                        self.recipes.append(recipe)
-                        categories_set.add(recipe["category"])
+                    if not recipe:
+                        continue
 
-                        # Index ingredients for search
-                        for ingredient in recipe.get("ingredients", []):
-                            for word in self.extract_ingredient_words(ingredient):
-                                self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
-                        recipes_loaded += 1
+                    rid = recipe["id"]
+                    if rid in self._seen_ids:
+                        continue
 
-                        # Remove the 10k limit check to load the entire dataset
-                        # if recipes_loaded >= 10000:
-                        #     break
+                    # Add to in-memory structures
+                    self._seen_ids.add(rid)
+                    self.recipes.append(recipe)
+                    categories_set.add(recipe["category"])
+
+                    for ingredient in recipe.get("ingredients", []):
+                        for word in self.extract_ingredient_words(ingredient):
+                            self.ingredient_index[word.lower()].add(len(self.recipes) - 1)
+
+                    recipes_loaded_now += 1
+
+                    # If we only want a fast initial batch, stop here and spawn background loader
+                    if (
+                        self.background_load
+                        and not self._background_started
+                        and recipes_loaded_now >= self.initial_limit
+                    ):
+                        self.categories = sorted(list(categories_set))
+                        self._background_started = True
+
+                        logger.info(
+                            f"⏸ Initial load reached {recipes_loaded_now} recipes; "
+                            f"starting background loader for the rest."
+                        )
+
+                        # Start background thread
+                        t = threading.Thread(
+                            target=self._background_load_remaining,
+                            daemon=True
+                        )
+                        t.start()
+
+                        break  # stop initial, return control to caller
 
                 except Exception as e:
                     logger.warning(f"Error processing recipe {idx}: {e}")
-            
-            if not self.is_hf_dataset:
-                file.close()
 
-            self.categories = sorted(list(categories_set))
+            else:
+                # If we never hit the break, we finished the whole dataset synchronously
+                self.categories = sorted(list(categories_set))
+                self.fully_loaded = True
+                logger.info(f"✅ Loaded all recipes synchronously; total={len(self.recipes)}")
+                logger.info(f"📊 Found {len(self.categories)} categories")
+                logger.info(f"🔍 Indexed {len(self.ingredient_index)} unique ingredients")
 
-            logger.info(f"✅ Loaded {recipes_loaded} recipes successfully")
-            logger.info(f"📊 Found {len(self.categories)} categories")
-            logger.info(f"🔍 Indexed {len(self.ingredient_index)} unique ingredients")
-
-            return recipes_loaded > 0
+            return len(self.recipes) > 0
 
         except Exception as e:
             logger.error(f"❌ Error loading recipes: {e}")
@@ -393,10 +484,8 @@ class SimpleRecipeEngine:
                 return None
 
             # Image
-            # --- FIX: proper image extraction from R-style vector ---
             image_list = self._parse_r_vector_keep_placeholders(row.get("Images", ""))
             image_url = image_list[0] if image_list else "https://via.placeholder.com/400x300/f0f0f0/666?text=Recipe"
-
 
             # Times / difficulty
             total_time = self.safe_int(row.get("TotalTime"), 30)
@@ -414,8 +503,8 @@ class SimpleRecipeEngine:
                 "rating": self.safe_float(row.get("AggregatedRating")) or round(4.2 + (index % 7) * 0.1, 1),
                 "category": self.clean_text(row.get("RecipeCategory", "General")),
                 "difficulty": difficulty,
-                "ingredients": ingredients,       # aligned with padding
-                "instructions": instructions,     # unchanged parser
+                "ingredients": ingredients,
+                "instructions": instructions,
                 "nutrition": {
                     "calories": self.safe_int(row.get("Calories", 0)),
                     "protein": self.safe_float(row.get("ProteinContent", 0)),
