@@ -9,10 +9,10 @@
 11/12/25 - Worked on decluttering the new implementation so that things that I had before that are no longer needed because of the HuggingFace connection are removed.(This will help to make the web app faster because it won't need to go through unnecessary processes.)
 11/13/25 - I spent time finding ways to make the processing more efficient. It takes about 10 minutes for the web app  to start up because it has to process and adjust 50000 recipes. I found that I could try batch processing, but I am still looking into exactly how to do that.
 11/14/25 - I got an error when testing the web app, most of the recipes had the instructions inverted and so I spent time looking through my code for what caused it. It ended up being a deleted portion of a function from when I was implementing the connection from HuggingFace. The rest of the time I spent on finding more about how I could batch process and adjust the recipes to decrease startup time.
-11/15/25 -
-11/16/25
-11/17/25
-11/19/25
-11/20/25
-11/21/25
-11/22/25
+11/15/25 – Researched different data-loading methods, including batch and subset processing. Found that batching alone wouldn’t reduce startup time enough.
+11/16/25 – Looked into subset-first loading. Tested small samples and confirmed it significantly cuts startup time.
+11/17/25 – Researched background processing using threads and async. Tested small prototypes to see if data could load without blocking the app.
+11/19/25 – Decided on a hybrid method: load a small subset on startup, process the rest in the background. Started planning integration.
+11/20/25 – Implemented subset loading so the app starts with a small sample. Set up a background task to process the remaining data.
+11/21/25 – Integrated the background processor into the engine. Added logging and checks so it runs safely without blocking.
+11/22/25 – Tested the hybrid system end-to-end. Fixed timing issues and cleaned up code for smoother background loading.
