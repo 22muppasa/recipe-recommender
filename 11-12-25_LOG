@@ -9,4 +9,10 @@
 11/12/25 - Worked on decluttering the new implementation so that things that I had before that are no longer needed because of the HuggingFace connection are removed.(This will help to make the web app faster because it won't need to go through unnecessary processes.)
 11/13/25 - I spent time finding ways to make the processing more efficient. It takes about 10 minutes for the web app  to start up because it has to process and adjust 50000 recipes. I found that I could try batch processing, but I am still looking into exactly how to do that.
 11/14/25 - I got an error when testing the web app, most of the recipes had the instructions inverted and so I spent time looking through my code for what caused it. It ended up being a deleted portion of a function from when I was implementing the connection from HuggingFace. The rest of the time I spent on finding more about how I could batch process and adjust the recipes to decrease startup time.
-
+11/15/25 -
+11/16/25
+11/17/25
+11/19/25
+11/20/25
+11/21/25
+11/22/25
